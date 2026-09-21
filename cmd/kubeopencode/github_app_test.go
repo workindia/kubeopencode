@@ -310,6 +310,56 @@ func TestInstallationToken(t *testing.T) {
 			t.Errorf("error should include GitHub's message, got: %v", err)
 		}
 	})
+
+	t.Run("malformed JSON response is an error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			// A proxy or GHES instance returning a non-JSON body must not be
+			// mistaken for a valid token response.
+			_, _ = w.Write([]byte("not json"))
+		}))
+		defer server.Close()
+
+		auth := &githubAppAuth{
+			appID:          "123",
+			installationID: "456",
+			privateKeyPEM:  pkcs1PEM(t, key),
+			apiURL:         server.URL,
+		}
+
+		_, err := auth.installationToken()
+		if err == nil {
+			t.Fatal("expected error for malformed JSON response")
+		}
+		if !strings.Contains(err.Error(), "failed to parse installation token response") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("empty token in response is an error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			// Valid JSON but no token: an empty value must never be returned,
+			// since it would silently produce unusable git credentials.
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": ""})
+		}))
+		defer server.Close()
+
+		auth := &githubAppAuth{
+			appID:          "123",
+			installationID: "456",
+			privateKeyPEM:  pkcs1PEM(t, key),
+			apiURL:         server.URL,
+		}
+
+		_, err := auth.installationToken()
+		if err == nil {
+			t.Fatal("expected error for empty token in response")
+		}
+		if !strings.Contains(err.Error(), "did not contain a token") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestWriteGithubAppCredentials(t *testing.T) {

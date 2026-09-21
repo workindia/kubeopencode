@@ -84,6 +84,43 @@ func TestSetupAuth_GithubAppIncompleteIsError(t *testing.T) {
 	}
 }
 
+func TestSetupAuth_GithubAppMintFailurePropagates(t *testing.T) {
+	clearGitAuthEnv(t)
+	key := testRSAKey(t)
+
+	// GitHub rejects the JWT; setupAuth must surface the failure rather than
+	// fall back to an unauthenticated clone.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
+	}))
+	defer server.Close()
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(envRepo, "https://github.com/org/repo.git")
+	t.Setenv(envGHAppID, "123")
+	t.Setenv(envGHAppInstallationID, "456")
+	t.Setenv(envGHAppPrivateKey, pkcs1PEM(t, key))
+	t.Setenv(envGithubAPIURL, server.URL)
+
+	appAuth, err := setupAuth()
+	if err == nil {
+		t.Fatal("expected setupAuth to fail when the installation token cannot be minted")
+	}
+	if appAuth != nil {
+		t.Error("expected nil auth on failure")
+	}
+	if !strings.Contains(err.Error(), "Bad credentials") {
+		t.Errorf("error should include GitHub's message, got: %v", err)
+	}
+
+	// No usable credential file should be left behind.
+	if _, statErr := os.Stat(filepath.Join(home, ".git-credentials")); !os.IsNotExist(statErr) {
+		t.Errorf("expected no credentials file after a failed mint, stat err = %v", statErr)
+	}
+}
+
 func TestSetupAuth_StaticHTTPSStillWorks(t *testing.T) {
 	clearGitAuthEnv(t)
 
