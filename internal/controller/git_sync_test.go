@@ -169,7 +169,7 @@ func TestBuildGitSyncSidecar(t *testing.T) {
 	}
 	sysCfg := systemConfig{systemImage: "ghcr.io/kubeopencode/kubeopencode:latest"}
 
-	sidecar := buildGitSyncSidecar(gm, "git-context-0", 0, sysCfg)
+	sidecar := buildGitSyncSidecar(gm, "git-context-0", 0, sysCfg, "")
 
 	if sidecar.Name != "git-sync-0" {
 		t.Errorf("expected name 'git-sync-0', got %q", sidecar.Name)

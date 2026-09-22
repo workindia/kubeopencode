@@ -177,6 +177,11 @@ type gitMount struct {
 	syncEnabled  bool                           // Whether auto-sync is enabled
 	syncPolicy   kubeopenv1alpha1.GitSyncPolicy // HotReload or Rollout
 	syncInterval time.Duration                  // Polling interval
+
+	// reloadOnSync asks the OpenCode server to re-scan its configuration after
+	// a HotReload update lands. Required for content the server caches at
+	// instance start (skills). Only meaningful on long-running Agent servers.
+	reloadOnSync bool
 }
 
 // resolvedContext holds a resolved context with its content and metadata
@@ -310,6 +315,12 @@ const (
 	// This allows overriding permission settings to enable non-interactive/automated mode.
 	// The value is a JSON object mapping tool names to permission actions (allow/ask/deny).
 	OpenCodePermissionEnvVar = "OPENCODE_PERMISSION"
+
+	// EnvOpenCodeReloadURL is the environment variable set on git-sync sidecars
+	// that should ask the OpenCode server to re-scan after a config update. The
+	// value is the base URL of the agent's OpenCode server (e.g.
+	// http://127.0.0.1:4096). Unset means no reload is attempted.
+	EnvOpenCodeReloadURL = "OPENCODE_RELOAD_URL"
 
 	// DefaultOpenCodePermission is the default permission configuration for automated execution.
 	// In Kubernetes/CI environments, we need to allow all permissions to avoid interactive prompts
@@ -536,7 +547,11 @@ func buildGitCredentialEnvVars(secretName string) []corev1.EnvVar {
 
 // buildGitSyncSidecar creates a sidecar container that periodically syncs a Git repository.
 // Used when sync.policy is HotReload to keep content up-to-date without Pod restart.
-func buildGitSyncSidecar(gm gitMount, volumeName string, index int, sysCfg systemConfig) corev1.Container {
+//
+// serverReloadURL, when non-empty, is passed to the sidecar so it can ask the
+// OpenCode server to re-scan after an update. It is empty for mounts that do not
+// request a reload, and for ephemeral Task pods (which have no long-lived server).
+func buildGitSyncSidecar(gm gitMount, volumeName string, index int, sysCfg systemConfig, serverReloadURL string) corev1.Container {
 	ref := defaultString(gm.ref, DefaultGitRef)
 	intervalSeconds := int(gm.syncInterval.Seconds())
 	if intervalSeconds <= 0 {
@@ -553,6 +568,13 @@ func buildGitSyncSidecar(gm gitMount, volumeName string, index int, sysCfg syste
 		{Name: "GIT_ROOT", Value: DefaultGitRoot},
 		{Name: "GIT_LINK", Value: DefaultGitLink},
 		{Name: "GIT_SYNC_INTERVAL", Value: strconv.Itoa(intervalSeconds)},
+	}
+
+	if gm.reloadOnSync && serverReloadURL != "" {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  EnvOpenCodeReloadURL,
+			Value: serverReloadURL,
+		})
 	}
 
 	volumeMounts := []corev1.VolumeMount{
