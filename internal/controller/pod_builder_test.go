@@ -3969,7 +3969,7 @@ func TestBuildGitSyncSidecar_HomeEnv(t *testing.T) {
 		mountPath:  "/workspace",
 	}
 	sysCfg := defaultSystemConfig()
-	c := buildGitSyncSidecar(gm, "git-context-0", 0, sysCfg)
+	c := buildGitSyncSidecar(gm, "git-context-0", 0, sysCfg, "")
 
 	if !hasEnvVar(c.Env, "HOME", DefaultHomeDir) {
 		t.Errorf("git-sync sidecar missing HOME=%s env var for SCC compatibility", DefaultHomeDir)
