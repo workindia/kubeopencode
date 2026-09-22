@@ -98,6 +98,7 @@ contexts:
         enabled: true
         interval: "5m"
         policy: HotReload    # HotReload (update in-place) or Rollout (rolling restart)
+        reload: false        # true = also re-scan the OpenCode server after an update
     mountPath: synced-repo
 ```
 

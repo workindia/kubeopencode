@@ -147,6 +147,47 @@ skills:
 3. The controller auto-injects `skills.paths` into `opencode.json`
 4. OpenCode discovers SKILL.md files and makes them available as slash commands
 
+## Keeping Skills Up to Date
+
+OpenCode discovers skills **once, when its server instance starts**, and caches
+them. For a long-running Agent that means a change pushed to a skill repository
+is invisible until the Pod restarts — even though the cloned files on disk are
+updated.
+
+Enable `sync` to close that gap. A `git-sync` sidecar polls the repository and,
+when it detects a new commit, updates the files **and asks the server to
+re-scan**, so the change takes effect without a restart:
+
+```yaml
+skills:
+- name: org-skills
+  git:
+    repository: https://github.com/my-org/standards-skills.git
+    path: .claude/skills
+    sync:
+      enabled: true
+      interval: 15m   # default for skills
+```
+
+Notes:
+
+- **Only `HotReload` is supported.** `Rollout` is rejected for skills, since it
+  would compare remote refs in the controller rather than reloading in place.
+- **Reloads wait for an idle agent.** Re-scanning briefly re-initializes the
+  server instance, which would abort a turn that is mid-flight. If a session is
+  busy the reload is deferred to the next cycle, so a continuously busy agent
+  picks up the change at its next idle window. The file update itself still
+  happens immediately.
+- **`sync` applies to long-running Agents only.** Task pods are ephemeral and
+  always start fresh, so they ignore it.
+- **Skills selected with `names` are mounted from fixed subpaths.** Edits to
+  those skills are picked up, but a newly added skill directory is not mounted
+  until the Pod restarts. Omit `names` to mount the whole directory and pick up
+  additions without a restart.
+
+Git contexts can do the same with `sync.reload: true` — see
+[Git Auto-Sync](git-auto-sync.md).
+
 ## Skills in Templates
 
 Skills can be defined in AgentTemplates and inherited by Agents. Agent-level skills replace template-level skills (same merge strategy as contexts):
@@ -177,3 +218,6 @@ spec:
 | `git.depth` | int | 1 | Clone depth (1=shallow, 0=full) |
 | `git.recurseSubmodules` | bool | false | Clone submodules recursively |
 | `git.secretRef.name` | string | - | Secret for Git authentication. Keys: `app-id`/`app-installation-id`/`app-private-key` (GitHub App, preferred), `username`/`password` (HTTPS), or `ssh-privatekey` (SSH) |
+| `git.sync.enabled` | bool | false | Poll the repository and reload the server on change (Agent servers only) |
+| `git.sync.interval` | duration | 15m | Polling interval for skill sync |
+| `git.sync.policy` | string | HotReload | Only `HotReload` is valid for skills |
